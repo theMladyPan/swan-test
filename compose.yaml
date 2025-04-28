@@ -1,0 +1,21 @@
+services:
+  swan-demo:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "8000:8000"
+    env_file:
+      - .env
+    
+    develop:
+      watch:
+        - action: sync
+          path: .
+          target: /app
+        - action: rebuild
+          path: requirements.txt
+        - action: rebuild
+          path: Dockerfile
+        - action: rebuild
+          path: compose.yaml

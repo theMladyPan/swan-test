@@ -1,0 +1,10 @@
+Dockerfile
+.git
+.history
+.vscode
+**__pycache__**
+data
+.dockerignore
+.venv
+.env
+compose.yaml

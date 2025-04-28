@@ -1,0 +1,7 @@
+.history
+.venv
+.vscode
+**.pyc
+__pycache__/
+*.mp3
+.env

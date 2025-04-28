@@ -1,0 +1,3 @@
+fastapi[standard]
+logfire[fastapi, openai, httpx]
+openai
