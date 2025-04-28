@@ -1,5 +1,5 @@
 import asyncio
-from fastapi import FastAPI
+from fastapi import FastAPI, staticfiles
 from fastapi.responses import StreamingResponse, HTMLResponse
 import openai
 import dotenv
@@ -23,6 +23,14 @@ logfire.configure(
 logfire.instrument_fastapi(app)
 logfire.instrument_openai(aclient)
 logfire.instrument_httpx()
+
+
+# mount staticfiles
+app.mount(
+    "/static",
+    staticfiles.StaticFiles(directory="src/static"),
+    name="static",
+)
 
 
 async def stream_response(history: list[dict[str, str]]):

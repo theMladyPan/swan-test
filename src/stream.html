@@ -18,6 +18,9 @@
     <button class="btn btn-primary mb-3" onclick="playStream()">Play Audio</button>
 
     <div id="status" class="mt-3 text-secondary"></div>
+    
+    <!-- Hidden audio element for the placeholder sound -->
+    <audio id="placeholderAudio" src="static/perc.mp3" loop preload="auto" style="display: none;"></audio>
   </div>
 
   <script>
@@ -26,6 +29,13 @@
     let sourceBuffer = null;
     let audioElement = null;
     let mediaSourceUrl = null;
+    let placeholderAudio = null;
+    let firstChunkReceived = false;
+
+    // Initialize the placeholder audio
+    document.addEventListener('DOMContentLoaded', function() {
+      placeholderAudio = document.getElementById('placeholderAudio');
+    });
 
     async function playStream() {
       const textInput = document.getElementById("textInput").value;
@@ -40,6 +50,16 @@
         URL.revokeObjectURL(mediaSourceUrl);
         audioElement.remove();
       }
+      
+      // Reset first chunk flag
+      firstChunkReceived = false;
+      
+      // Start playing placeholder audio
+      placeholderAudio.play().catch(e => {
+        console.warn("Could not play placeholder audio:", e);
+      });
+      
+      status.textContent = "Waiting for stream to begin...";
 
       // Create audio element
       audioElement = document.createElement('audio');
@@ -59,35 +79,131 @@
           if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
 
           const reader = response.body.getReader();
+          
           const pump = async () => {
-            const { done, value } = await reader.read();
-            if (done) {
-              console.log('Stream ended');
-              mediaSource.endOfStream();
-              return;
-            } else {
-              console.log('Received chunk of data:', value.byteLength, 'bytes');
+            try {
+              const { done, value } = await reader.read();
+              
+              if (done) {
+                console.log('Stream ended');
+                // Check if updating before ending the stream
+                if (sourceBuffer.updating) {
+                  sourceBuffer.addEventListener('updateend', () => {
+                    try {
+                      mediaSource.endOfStream();
+                    } catch (e) {
+                      console.warn('Error ending media stream:', e);
+                    }
+                  }, { once: true });
+                } else {
+                  try {
+                    mediaSource.endOfStream();
+                  } catch (e) {
+                    console.warn('Error ending media stream:', e);
+                  }
+                }
+                return;
+              } else {
+                console.log('Received chunk of data:', value.byteLength, 'bytes');
+                
+                // If this is the first chunk, stop the placeholder audio and update status
+                if (!firstChunkReceived) {
+                  firstChunkReceived = true;
+                  
+                  // Fade out and stop the placeholder audio
+                  fadeOutAndStop(placeholderAudio, 500);
+                  
+                  // Update status
+                  status.textContent = "Streaming and playing audio...";
+                  
+                  // Play the streaming audio
+                  audioElement.play().catch(e => console.error("Error playing audio:", e));
+                }
+              }
+              
+              // Create a function to append the buffer when it's safe
+              const appendData = () => {
+                if (sourceBuffer.updating) {
+                  // If the source buffer is updating, wait until it's done
+                  sourceBuffer.addEventListener('updateend', appendData, { once: true });
+                } else {
+                  try {
+                    sourceBuffer.appendBuffer(value);
+                    // Continue pumping after append is initiated
+                    pump();
+                  } catch (e) {
+                    console.error('Error appending buffer:', e);
+                    // Try to end the stream gracefully
+                    try {
+                      if (!sourceBuffer.updating) {
+                        mediaSource.endOfStream();
+                      }
+                    } catch (endError) {
+                      console.warn('Error ending stream after append failure:', endError);
+                    }
+                  }
+                }
+              };
+              
+              appendData();
+            } catch (error) {
+              console.error("Stream reading error:", error);
+              // Stop the placeholder audio
+              placeholderAudio.pause();
+              placeholderAudio.currentTime = 0;
+              
+              // Try to end the stream on error
+              try {
+                if (mediaSource.readyState === 'open' && !sourceBuffer.updating) {
+                  mediaSource.endOfStream('network');
+                }
+              } catch (e) {
+                console.warn('Error ending stream after read error:', e);
+              }
+              
+              status.textContent = "Error streaming audio.";
             }
-            // Wait until previous append is done
-            if (sourceBuffer.updating) {
-              await new Promise(resolve => {
-                sourceBuffer.addEventListener('updateend', resolve, { once: true });
-              });
-            }
-            sourceBuffer.appendBuffer(value);
-            pump();
           };
+          
+          // Start the pump
           pump();
-
-          audioElement.play();
-          status.textContent = "Streaming and playing audio...";
 
         } catch (error) {
           console.error("Streaming error:", error);
           status.textContent = "Error streaming audio.";
+          
+          // Stop the placeholder audio
+          placeholderAudio.pause();
+          placeholderAudio.currentTime = 0;
+          
           alert("Error streaming audio. Check the console for details.");
         }
       });
+    }
+    
+    // Function to fade out and stop an audio element
+    function fadeOutAndStop(audioElement, duration) {
+      if (!audioElement) return;
+      
+      const originalVolume = audioElement.volume;
+      const fadeSteps = 20;
+      const fadeInterval = duration / fadeSteps;
+      const volumeStep = originalVolume / fadeSteps;
+      
+      let currentStep = 0;
+      
+      const fadeOutInterval = setInterval(() => {
+        currentStep++;
+        
+        if (currentStep >= fadeSteps) {
+          audioElement.pause();
+          audioElement.currentTime = 0;
+          audioElement.volume = originalVolume; // Reset volume for next time
+          clearInterval(fadeOutInterval);
+        } else {
+          audioElement.volume = originalVolume - (volumeStep * currentStep);
+        }
+      }, fadeInterval);
     }
   </script>
 
