@@ -136,7 +136,7 @@ async def generate_speech_stream(text: str):
         voice="alloy",
         input=text,
     ) as response:
-        for chunk in response.iter_bytes():
+        for chunk in response.iter_bytes(chunk_size=1024):
             yield chunk
 
 
